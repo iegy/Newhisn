@@ -6,6 +6,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import net.iegy.hisn.browser.SearchEngine
@@ -42,7 +43,9 @@ class SettingsRepositoryTest {
 
     @Test fun settingsSurviveRecreatingTheStore() = runBlocking {
         val file = File(tmp.root, "b.preferences_pb")
-        val first = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        val firstJob = SupervisorJob()
+        val first = CoroutineScope(firstJob + Dispatchers.IO)
         val mirror = RecordingMirror()
         with(repo(file, first, mirror)) {
             setTheme(ThemeMode.DARK)
@@ -55,11 +58,14 @@ class SettingsRepositoryTest {
             setCustomHomeUrl("https://example.org")
             addToAllowlist("WWW.Example.com")
         }
-        first.cancel() // simulates the app being closed
+        // simulates the app being closed: wait until the first DataStore
+        // has really released the file before opening it again
+        firstJob.cancelAndJoin()
 
-        val second = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val secondJob = SupervisorJob()
+        val second = CoroutineScope(secondJob + Dispatchers.IO)
         val s = repo(file, second).settings.first()
-        second.cancel()
+        secondJob.cancelAndJoin()
 
         assertEquals(ThemeMode.DARK, s.theme)
         assertEquals(AppLanguage.ARABIC, s.language)
